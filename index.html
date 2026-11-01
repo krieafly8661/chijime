@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ちぢめ</title>
+<meta name="description" content="下にスワイプして、身長1.6mから10のマイナス35乗メートルまで縮む。途中で出会うものはすべて本当の大きさ。後半の16桁には、何もない。">
+<meta property="og:title" content="ちぢめ">
+<meta property="og:description" content="身長1.6mから10のマイナス35乗メートルまで縮む。後半の16桁には、何もない。">
+<style>
+:root{--ink:#0f1320}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:#0b0d14;color:#fff;font:15px/1.6 "Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;user-select:none;-webkit-user-select:none;overscroll-behavior:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block}
+.screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#0b0d14;overflow:auto;z-index:3}
+.screen.show{display:flex}
+.screen h2{font-size:48px;margin:0;letter-spacing:.2em}
+.screen p{margin:0;color:#aab1c2;max-width:24em}
+.btn{font:inherit;font-weight:800;border:2px solid #fff;background:#fff;color:#0b0d14;border-radius:14px;padding:13px 22px;cursor:pointer}
+.btn.ghost{background:transparent;color:#fff}
+.big{font:800 40px ui-monospace,Consolas,monospace}
+.cards{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:30em}
+.card{font-size:12px;border:1px solid #3a4152;border-radius:99px;padding:3px 10px;color:#6c7486}
+.card.got{border-color:#fff;color:#fff}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#press{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:2;font:inherit;font-weight:800;border:2px solid #fff;border-radius:50%;width:72px;height:72px;background:#0b0d14;color:#fff;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<button id="press" aria-label="ちぢむ">ちぢむ</button>
+
+<div class="screen show" id="title">
+  <h2>ちぢめ</h2>
+  <p>下にスワイプすると、あなたは縮む。<br>出会うものは、すべて本当の大きさです。通りすぎるものをタップすると、名刺がもらえます。</p>
+  <p>目的地は 10<sup>-35</sup> m。</p>
+  <button class="btn" id="start">縮みはじめる</button>
+</div>
+<div class="screen" id="end">
+  <div class="big">1.6 × 10<sup>-35</sup> m</div>
+  <p>プランク長。ここより小さい長さは、今の物理では扱えないと考えられている。</p>
+  <p id="stats"></p>
+  <div class="cards" id="cards"></div>
+  <div class="row"><button class="btn" id="again">もう一回</button><button class="btn ghost" id="share">Xに投稿</button></div>
+</div>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const cv=$('cv'),cx=cv.getContext('2d');
+let W=400,H=700,REF=150;
+function fit(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;cx.setTransform(d,0,0,d,0,0);REF=Math.min(W,H)*.36}
+addEventListener('resize',fit);
+
+/* ---------- 本当の大きさ（m） ---------- */
+const OBJ=[
+  {n:'猫',s:.46,c:'#e0a458',k:'cat',u:'体長'},
+  {n:'スマホ',s:.15,c:'#2b2f3a',k:'phone',u:'たて'},
+  {n:'1円玉',s:.02,c:'#c9ced6',k:'coin',u:'直径'},
+  {n:'ミツバチ',s:.013,c:'#f2b705',k:'bee',u:'体長'},
+  {n:'米粒',s:.005,c:'#f6f1e3',k:'grain',u:'長さ'},
+  {n:'ゴマ',s:.003,c:'#3b2f2a',k:'grain',u:'長さ'},
+  {n:'ミジンコ',s:.0015,c:'#9fd3c7',k:'cell',u:'体長'},
+  {n:'ヒョウヒダニ',s:.0003,c:'#d9b38c',k:'mite',u:'体長'},
+  {n:'ゾウリムシ',s:.0002,c:'#a8d5a2',k:'cell',u:'長さ'},
+  {n:'髪の毛の太さ',s:8e-5,c:'#2a211c',k:'rod',u:'太さ'},
+  {n:'スギ花粉',s:3e-5,c:'#f5d76e',k:'pollen',u:'直径'},
+  {n:'赤血球',s:7.5e-6,c:'#d64545',k:'rbc',u:'直径'},
+  {n:'PM2.5',s:2.5e-6,c:'#8a8f99',k:'dot',u:'直径'},
+  {n:'大腸菌',s:2e-6,c:'#7fb77e',k:'capsule',u:'長さ'},
+  {n:'緑の光の波長',s:5.3e-7,c:'#3ddc84',k:'wave',u:'波長'},
+  {n:'インフルエンザウイルス',s:1e-7,c:'#e76f51',k:'virus',u:'直径'},
+  {n:'リボソーム',s:2.5e-8,c:'#b388eb',k:'blob',u:'直径'},
+  {n:'DNAの二重らせん',s:2e-9,c:'#4cc9f0',k:'helix',u:'幅'},
+  {n:'水分子',s:2.8e-10,c:'#4895ef',k:'water',u:'大きさ'},
+  {n:'水素原子',s:1.06e-10,c:'#bde0fe',k:'atom',u:'直径'},
+  {n:'ウランの原子核',s:1.5e-14,c:'#ff8fab',k:'nucleus',u:'直径'},
+  {n:'陽子',s:1.7e-15,c:'#ff5d8f',k:'proton',u:'直径'},
+  {n:'クォークと電子',s:1e-19,c:'#ffffff',k:'dot',u:'大きさ',note:'大きさは見つかっていない'}
+];
+const LINES=[
+  [-11.6,'原子の中は、ほとんど空っぽ。','原子核は、原子の10万分の1くらいしかない。'],
+  [-19.6,'ここから先、実験で確かめられたものは何もない。','16桁ぶん、何もない。'],
+  [-23,'何もない。',''],
+  [-26.5,'まだ、何もない。',''],
+  [-30,'……',''],
+  [-31.8,'このあたりで、自然の力がひとつにまとまる','と考える理論がある。'],
+  [-34.1,'もうすぐ。','']
+];
+const START=Math.log10(1.6),GOAL=Math.log10(1.616e-35),DESERT=-19;
+
+/* ---------- 状態 ---------- */
+let S=null;
+function newGame(){fit();S={L:START,v:0,t:0,started:false,done:false,got:new Set(),flash:null,drag:null};
+  OBJ.forEach((o,i)=>{o.a=i*2.39996+.6;o.L=Math.log10(o.s)})}
+
+/* ---------- 単位 ---------- */
+function fmt(m){
+  const U=[[1,'m'],[1e-2,'cm'],[1e-3,'mm'],[1e-6,'μm'],[1e-9,'nm'],[1e-12,'pm'],[1e-15,'fm']];
+  if(m<1e-16){const e=Math.floor(Math.log10(m)),c=m/Math.pow(10,e);return`${c.toFixed(1)} × 10^${e} m`}
+  for(const[u,s]of U){if(m>=u){const v=m/u;return`${v>=100?v.toFixed(0):v>=10?v.toFixed(1):v.toFixed(2)} ${s}`}}
+  return`${(m/1e-15).toFixed(2)} fm`;
+}
+const sup=s=>s.replace(/\^(-?\d+)/,(_,e)=>e.split('').map(ch=>'⁰¹²³⁴⁵⁶⁷⁸⁹'['0123456789'.indexOf(ch)]||'⁻').join(''));
+
+/* ---------- 音 ---------- */
+let AC=null,osc=null,g=null;
+function audio(){
+  if(AC){if(AC.state==='suspended')AC.resume();return}
+  try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){return}
+  osc=AC.createOscillator();osc.type='sine';g=AC.createGain();g.gain.value=0;osc.connect(g).connect(AC.destination);osc.start();
+}
+function chime(f){if(!AC)return;const o=AC.createOscillator(),gg=AC.createGain(),t=AC.currentTime;o.type='triangle';o.frequency.value=f;
+  gg.gain.setValueAtTime(.15,t);gg.gain.exponentialRampToValueAtTime(.001,t+.6);o.connect(gg).connect(AC.destination);o.start(t);o.stop(t+.6)}
+
+/* ---------- 入力 ---------- */
+function kick(dv){if(!S||S.done)return;audio();if(!S.started){S.started=true}S.v=Math.max(-.8,Math.min(.9,S.v+dv))}
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);S.drag={y:e.clientY,x:e.clientX,y0:e.clientY,t:performance.now()}});
+cv.addEventListener('pointermove',e=>{if(!S.drag)return;const dy=e.clientY-S.drag.y;S.drag.y=e.clientY;kick(dy*.0025)});
+cv.addEventListener('pointerup',e=>{const d=S.drag;S.drag=null;if(d&&Math.abs(e.clientY-d.y0)<8&&performance.now()-d.t<350)tap(e.clientX,e.clientY)});
+cv.addEventListener('wheel',e=>{e.preventDefault();kick(e.deltaY*.0012)},{passive:false});
+$('press').addEventListener('pointerdown',e=>{e.preventDefault();kick(.25)});
+addEventListener('keydown',e=>{if(e.code==='ArrowDown'||e.code==='Space'){e.preventDefault();kick(.25)}if(e.code==='ArrowUp')kick(-.25)});
+
+/* ---------- 物の位置 ---------- */
+function place(o){
+  const q=Math.pow(10,o.L-S.L),d=q*REF;
+  const r=Math.max(0,d*.62+(d<REF*3?40:0)-30);
+  return{q,d,x:W/2+Math.cos(o.a)*r,y:H*.47+Math.sin(o.a)*r};
+}
+function tap(x,y){
+  if(!S||S.done)return;
+  for(const o of OBJ){if(S.got.has(o.n))continue;const p=place(o);if(p.q<.12||p.q>8)continue;
+    let hit;
+    if(o.k==='rod'||o.k==='wave')hit=Math.abs(y-p.y)<Math.max(22,p.d*.6);
+    else if(o.k==='helix')hit=Math.abs(x-p.x)<Math.max(22,p.d*.6);
+    else hit=Math.hypot(x-p.x,y-p.y)<Math.max(24,p.d*.55);
+    if(hit){S.got.add(o.n);S.flash={t:1.4,txt:`名刺をもらった：${o.n}`};chime(660+S.got.size*30);return}
+  }
+}
+
+/* ---------- 色 ---------- */
+function hex(h){return[1,3,5].map(i=>parseInt(h.slice(i,i+2),16))}
+function mix(a,b,k){const A=hex(a),B=hex(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*k)).join(',')})`}
+const BG=[[0.3,'#cfe6f5'],[-2.5,'#d8eccb'],[-5.5,'#e5dcf3'],[-8.5,'#26304f'],[-13,'#141826'],[-19,'#08090d'],[-35,'#000000']];
+function bg(L){for(let i=1;i<BG.length;i++){if(L>=BG[i][0]){const[a,ca]=BG[i-1],[b,cb]=BG[i];return mix(ca,cb,(a-L)/(a-b))}}return'#000000'}
+function dark(L){return L<-7}
+
+/* ---------- 形 ---------- */
+function shape(o,p){
+  const c=cx,x=p.x,y=p.y,d=p.d,r=d/2;c.fillStyle=o.c;c.strokeStyle=o.c;
+  switch(o.k){
+    case 'cat':c.beginPath();c.ellipse(x,y+r*.15,r,r*.42,0,0,7);c.fill();c.beginPath();c.arc(x+r*.8,y-r*.25,r*.3,0,7);c.fill();
+      c.beginPath();c.moveTo(x+r*.6,y-r*.45);c.lineTo(x+r*.68,y-r*.75);c.lineTo(x+r*.82,y-r*.52);c.moveTo(x+r*.85,y-r*.52);c.lineTo(x+r*1.0,y-r*.75);c.lineTo(x+r*1.05,y-r*.42);c.fill();
+      c.lineWidth=r*.1;c.lineCap='round';c.beginPath();c.moveTo(x-r*.95,y);c.quadraticCurveTo(x-r*1.3,y-r*.5,x-r*1.1,y-r*.8);c.stroke();break;
+    case 'phone':c.beginPath();c.roundRect(x-r*.47,y-r,r*.94,d,r*.12);c.fill();c.fillStyle='#5a6b8c';c.beginPath();c.roundRect(x-r*.4,y-r*.88,r*.8,r*1.76,r*.06);c.fill();break;
+    case 'coin':c.beginPath();c.arc(x,y,r,0,7);c.fill();c.lineWidth=Math.max(1,r*.06);c.strokeStyle='#a9afb8';c.beginPath();c.arc(x,y,r*.82,0,7);c.stroke();
+      c.fillStyle='#a9afb8';c.font=`700 ${r*.9}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText('1',x,y);c.textBaseline='alphabetic';break;
+    case 'bee':c.fillStyle='#ffffff';c.beginPath();c.ellipse(x-r*.1,y-r*.45,r*.35,r*.22,-.5,0,7);c.fill();c.beginPath();c.ellipse(x+r*.2,y-r*.45,r*.32,r*.2,.4,0,7);c.fill();
+      c.fillStyle=o.c;c.beginPath();c.ellipse(x,y,r,r*.5,0,0,7);c.fill();c.fillStyle='#1d1a16';[-.35,0,.35].forEach(k=>c.fillRect(x+k*r-r*.07,y-r*.48,r*.14,r*.96));break;
+    case 'grain':c.beginPath();c.ellipse(x,y,r,r*.45,.3,0,7);c.fill();break;
+    case 'cell':c.beginPath();c.ellipse(x,y,r,r*.55,.2,0,7);c.fill();c.fillStyle=mix(o.c,'#1b4332',.45);c.beginPath();c.arc(x+r*.15,y,r*.18,0,7);c.fill();
+      c.beginPath();c.arc(x-r*.4,y+r*.1,r*.08,0,7);c.fill();break;
+    case 'mite':c.lineWidth=Math.max(1,r*.07);c.lineCap='round';for(let i=0;i<4;i++){const yy=y-r*.3+i*r*.2;c.beginPath();c.moveTo(x-r*.4,yy);c.lineTo(x-r,yy+r*.15*(i-1.5));c.moveTo(x+r*.4,yy);c.lineTo(x+r,yy+r*.15*(i-1.5));c.stroke()}
+      c.beginPath();c.ellipse(x,y,r*.55,r*.45,0,0,7);c.fill();break;
+    case 'rod':c.fillRect(0,y-r,W,d);break;
+    case 'pollen':c.beginPath();c.arc(x,y,r*.85,0,7);c.fill();for(let i=0;i<14;i++){const a=i/14*6.28;c.beginPath();c.arc(x+Math.cos(a)*r*.85,y+Math.sin(a)*r*.85,r*.13,0,7);c.fill()}break;
+    case 'rbc':c.beginPath();c.arc(x,y,r,0,7);c.fill();c.fillStyle=mix(o.c,'#ffffff',.25);c.beginPath();c.arc(x,y,r*.45,0,7);c.fill();break;
+    case 'dot':if(o.note){ // 大きさが見つかっていないので、点のまま描く
+        c.beginPath();c.arc(x,y,3,0,7);c.fill();c.lineWidth=1;c.beginPath();c.arc(x,y,Math.min(r,REF*.9),0,7);c.setLineDash([4,6]);c.stroke();c.setLineDash([]);break}
+      c.beginPath();c.arc(x,y,Math.max(1.5,r),0,7);c.fill();break;
+    case 'capsule':c.lineWidth=d*.4;c.lineCap='round';c.beginPath();c.moveTo(x-r*.8,y);c.lineTo(x+r*.8,y);c.stroke();break;
+    case 'wave':c.lineWidth=Math.max(2,d*.05);c.beginPath();for(let X=0;X<=W;X+=3){c.lineTo(X,y+Math.sin((X-x)/d*6.283)*d*.25)}c.stroke();break;
+    case 'virus':for(let i=0;i<16;i++){const a=i/16*6.28;c.lineWidth=Math.max(1,r*.07);c.beginPath();c.moveTo(x+Math.cos(a)*r*.8,y+Math.sin(a)*r*.8);c.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);c.stroke()}
+      c.beginPath();c.arc(x,y,r*.8,0,7);c.fill();break;
+    case 'blob':c.beginPath();c.arc(x-r*.2,y+r*.15,r*.55,0,7);c.fill();c.fillStyle=mix(o.c,'#ffffff',.3);c.beginPath();c.arc(x+r*.25,y-r*.2,r*.42,0,7);c.fill();break;
+    case 'helix':{c.lineWidth=Math.max(1.5,d*.08);const per=d*3.4;
+      for(const ph of[0,Math.PI]){c.strokeStyle=ph?mix(o.c,'#ffffff',.4):o.c;c.beginPath();for(let Y=0;Y<=H;Y+=3)c.lineTo(x+Math.sin((Y-y)/per*6.283+ph)*r,Y);c.stroke()}
+      c.strokeStyle=mix(o.c,'#ffffff',.6);c.lineWidth=Math.max(1,d*.015);for(let Y=y%(per/10);Y<H;Y+=per/10){const s=Math.sin((Y-y)/per*6.283);c.beginPath();c.moveTo(x+s*r,Y);c.lineTo(x-s*r,Y);c.stroke()}break}
+    case 'water':c.fillStyle='#ef476f';c.beginPath();c.arc(x,y,r*.55,0,7);c.fill();c.fillStyle='#f1f5f9';
+      [[-.65,.45],[.65,.45]].forEach(([a,b])=>{c.beginPath();c.arc(x+a*r,y+b*r,r*.33,0,7);c.fill()});break;
+    case 'atom':c.beginPath();c.arc(x,y,r,0,7);c.fillStyle=mix(bg(S.L),o.c,.35);c.fill();c.fillStyle='#ffffff';c.beginPath();c.arc(x,y,Math.max(1,r*1e-5),0,7);c.fill();break;
+    case 'nucleus':for(let i=0;i<36;i++){const a=i*2.4,rr=Math.sqrt(i/36)*r*.8;c.fillStyle=i%2?'#ff8fab':'#9aa3b5';c.beginPath();c.arc(x+Math.cos(a)*rr,y+Math.sin(a)*rr,r*.18,0,7);c.fill()}break;
+    case 'proton':c.beginPath();c.arc(x,y,r,0,7);c.fill();c.fillStyle='#ffffff';[[0,-.4],[-.35,.25],[.35,.25]].forEach(([a,b])=>{c.beginPath();c.arc(x+a*r,y+b*r,Math.max(1,r*.06),0,7);c.fill()});break;
+  }
+}
+
+/* ---------- 描画 ---------- */
+function draw(){
+  const L=S.L,m=Math.pow(10,L),dk=dark(L),fg=dk?'#ffffff':'#0f1320',sub=dk?'#9aa3b5':'#4a5568';
+  cx.fillStyle=bg(L);cx.fillRect(0,0,W,H);
+  // 物
+  const vis=OBJ.filter(o=>{const q=Math.pow(10,o.L-L);return q>.015&&q<14}).sort((a,b)=>b.L-a.L);
+  vis.forEach(o=>{const p=place(o);shape(o,p);
+    if(p.q>.08&&p.q<5){const got=S.got.has(o.n);cx.font='700 13px sans-serif';cx.textAlign='center';
+      let ly=o.k==='rod'||o.k==='wave'?p.y+p.d/2+18:o.k==='helix'?H*.2:p.y+Math.max(p.d*.55,6)+16;ly=Math.min(H-110,Math.max(70,ly));
+      const lx=Math.min(W-70,Math.max(70,o.k==='rod'||o.k==='wave'?W*.3:p.x));
+      const t1=(got?'✓ ':'')+o.n,t2=`${o.u} ${o.note?'10⁻¹⁹ m 未満':fmt(o.s)}`;
+      const w=Math.max(cx.measureText(t1).width,cx.measureText(t2).width)+12;
+      cx.fillStyle=dk?'#0f1320':'#ffffff';cx.fillRect(lx-w/2,ly-14,w,34);
+      cx.fillStyle=got?'#e07a00':fg;cx.fillText(t1,lx,ly);cx.fillStyle=sub;cx.font='12px sans-serif';cx.fillText(t2,lx,ly+15)}});
+  // メッセージ
+  LINES.forEach(([lv,a,b])=>{const k=(L-lv);if(k<.9&&k>-.9){cx.fillStyle=fg;cx.textAlign='center';cx.font='700 18px sans-serif';cx.fillText(a,W/2,H*.47);cx.font='14px sans-serif';cx.fillStyle=sub;cx.fillText(b,W/2,H*.47+24)}});
+  // 上の表示
+  cx.textAlign='left';cx.font='800 28px ui-monospace,Consolas,monospace';
+  cx.fillStyle=dk?'#0f1320':'#ffffff';cx.fillRect(8,10,cx.measureText(sup(fmt(m))).width+20,62);
+  cx.fillStyle=sub;cx.font='12px sans-serif';cx.fillText('いまのあなたの身長',16,28);
+  cx.fillStyle=fg;cx.font='800 28px ui-monospace,Consolas,monospace';cx.fillText(sup(fmt(m)),16,60);
+  // 物差し
+  const by=H-36;cx.fillStyle=fg;cx.fillRect(16,by,REF,3);cx.fillRect(16,by-8,2,11);cx.fillRect(16+REF-2,by-8,2,11);
+  cx.font='12px sans-serif';cx.fillStyle=dk?'#0f1320':'#ffffff';cx.fillRect(10,by-27,cx.measureText('この長さ ＝ あなたの身長').width+12,20);
+  cx.fillStyle=sub;cx.fillText('この長さ ＝ あなたの身長',16,by-12);
+  // 進み具合（右端）
+  const top=90,bot=H-130,x=W-10,yy=l=>top+(START-l)/(START-GOAL)*(bot-top);
+  cx.fillStyle=dk?'#2a3142':'#c8d0dc';cx.fillRect(x-2,top,4,bot-top);
+  cx.fillStyle=dk?'#1a1f2b':'#e2e8f0';cx.fillRect(x-2,yy(DESERT),4,bot-yy(DESERT));
+  OBJ.forEach(o=>{cx.fillStyle=S.got.has(o.n)?'#e07a00':sub;cx.fillRect(x-6,yy(o.L),12,2)});
+  cx.fillStyle=fg;cx.beginPath();cx.arc(x,yy(L),6,0,7);cx.fill();
+  if(S.flash){cx.textAlign='center';cx.font='700 15px sans-serif';const w=cx.measureText(S.flash.txt).width+24;
+    cx.fillStyle='#e07a00';cx.fillRect(W/2-w/2,84,w,32);cx.fillStyle='#ffffff';cx.fillText(S.flash.txt,W/2,105)}
+  if(!S.started){cx.textAlign='center';cx.fillStyle=fg;cx.font='700 16px sans-serif';cx.fillText('↓ 下にスワイプ',W/2,H*.75)}
+}
+
+/* ---------- ループ ---------- */
+let last=0;
+function loop(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
+  if(S&&!S.done){
+    if(S.started)S.t+=dt;
+    S.L-=S.v*dt;S.v*=Math.exp(-dt*(S.L<DESERT?.35:.55));
+    if(S.L>START){S.L=START;S.v=Math.max(0,S.v)}
+    if(S.flash){S.flash.t-=dt;if(S.flash.t<=0)S.flash=null}
+    if(osc){const desert=S.L<DESERT?Math.max(0,1-(DESERT-S.L)/8):1;
+      osc.frequency.setTargetAtTime(110*Math.pow(2,-S.L/8),AC.currentTime,.1);g.gain.setTargetAtTime(Math.min(.08,Math.abs(S.v)*.04)*desert,AC.currentTime,.1)}
+    if(S.L<=GOAL){S.L=GOAL;finish()}
+    draw();
+  }
+  requestAnimationFrame(loop);
+}
+function finish(){
+  S.done=true;if(g)g.gain.setTargetAtTime(0,AC.currentTime,.2);chime(1320);
+  const t=S.t,mm=Math.floor(t/60),ss=Math.floor(t%60),time=`${mm}分${String(ss).padStart(2,'0')}秒`;
+  $('stats').textContent=`かかった時間 ${time} ／ 名刺 ${S.got.size}/${OBJ.length} ／ 何もなかった区間 16桁`;
+  $('cards').innerHTML=OBJ.map(o=>`<span class="card${S.got.has(o.n)?' got':''}">${S.got.has(o.n)?o.n:'？'}</span>`).join('');
+  S.share=`身長1.6mから10⁻³⁵mまで縮んだ（${time}）。\n途中の16桁、本当に何もなかった。\n名刺 ${S.got.size}/${OBJ.length}\n#ちぢめ`;
+  $('end').classList.add('show');
+}
+$('start').onclick=()=>{audio();$('title').classList.remove('show');newGame()};
+$('again').onclick=()=>{$('end').classList.remove('show');newGame()};
+$('share').onclick=()=>open('https://twitter.com/intent/tweet?text='+encodeURIComponent(S.share)+'&url='+encodeURIComponent(location.href.split('#')[0]),'_blank','noopener');
+fit();newGame();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
